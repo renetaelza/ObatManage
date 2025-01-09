@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:obat/pages/cart.dart';
+import 'package:obat/pages/cart_page.dart';
 
 class ObatDetailPage extends StatefulWidget {
   final String obatId;
@@ -8,10 +11,10 @@ class ObatDetailPage extends StatefulWidget {
   ObatDetailPage({required this.obatId});
 
   @override
-  _ObatPageState createState() => _ObatPageState();
+  _ObatDetailPageState createState() => _ObatDetailPageState();
 }
 
-class _ObatPageState extends State<ObatDetailPage> {
+class _ObatDetailPageState extends State<ObatDetailPage> {
   Map<String, dynamic>? obatDetail;
 
   void fetchObatDetail() async {
@@ -42,6 +45,18 @@ class _ObatPageState extends State<ObatDetailPage> {
     } catch (e) {
       return 'Rp 0';
     }
+  }
+
+  void addToCart(Map<String, dynamic> obat) {
+    Provider.of<CartProvider>(context, listen: false).addToCart(obat);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${obat['nama']} added to cart!')),
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ShoppingCartPage()),
+    );
   }
 
   @override
@@ -183,7 +198,7 @@ class _ObatPageState extends State<ObatDetailPage> {
             const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () {
-                print('${obatDetail!['nama']} added to cart!');
+                addToCart(obatDetail!);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Color(0xFFC8ACD6),
