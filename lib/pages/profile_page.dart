@@ -20,7 +20,7 @@ class ProfilePage extends StatelessWidget {
   void _logout(BuildContext context) async {
     try {
       await FirebaseAuth.instance.signOut();
-      Navigator.pushNamedAndRemoveUntil(context, 'login', (route) => false);
+      Navigator.pushNamedAndRemoveUntil(context, 'login_page', (route) => false);
     } catch (e) {
       showDialog(
         context: context,

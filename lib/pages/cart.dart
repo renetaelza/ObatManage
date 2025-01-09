@@ -47,4 +47,9 @@ class CartProvider with ChangeNotifier {
       return total + (harga * quantity);
     });
   }
+
+  void clearCart() {
+  cartItems.clear();
+  notifyListeners();
+}
 }
