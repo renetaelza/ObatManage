@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
 import 'package:obat/pages/cart.dart';
+import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:uuid/uuid.dart';
+import 'package:obat/pages/payment_detail.dart';
 
 class ShoppingCartPage extends StatefulWidget {
   @override
@@ -10,6 +13,68 @@ class ShoppingCartPage extends StatefulWidget {
 
 class _ShoppingCartPageState extends State<ShoppingCartPage> {
   String? selectedPaymentMethod;
+
+  Future<String> processCheckout(
+      List<Map<String, dynamic>> cartItems, String metodeBayar, int totalHarga) async {
+    try {
+      final String transactionId = Uuid().v4();
+      
+      final transaction = {
+        'idTransaksi': transactionId,
+        'items': cartItems.map((item) => {
+          'nama': item['nama'],
+          'harga': item['harga'],
+          'quantity': item['quantity'],
+        }).toList(),
+        'metodeBayar': metodeBayar,
+        'totalHarga': totalHarga,
+        'tanggalTransaksi': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('transaksi')
+          .doc(transactionId)
+          .set(transaction);
+
+      return transactionId;
+    } catch (e) {
+      throw Exception('Checkout failed: $e');
+    }
+  }
+
+  void onCheckoutPressed() async {
+    if (selectedPaymentMethod == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Pilih metode pembayaran terlebih dahulu')),
+      );
+      return;
+    }
+
+    try {
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      final transactionId = await processCheckout(
+        cartProvider.cartItems,
+        selectedPaymentMethod!,
+        cartProvider.calculateTotalHarga(),
+      );
+
+      cartProvider.clearCart();
+
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => TransactionDetailsPage(
+            transactionId: transactionId,
+          ),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Transaksi gagal: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -142,16 +207,11 @@ class _ShoppingCartPageState extends State<ShoppingCartPage> {
                               },
                               hint: Text('Pilih Metode Pembayaran',
                                   style: TextStyle(color: Colors.white)),
-                              dropdownColor: Theme.of(context)
-                                  .primaryColor, // Dropdown background color
+                              dropdownColor: Theme.of(context).primaryColor,
                             ),
                             SizedBox(height: 10),
                             ElevatedButton(
-                              onPressed: () {
-                                // Implement checkout
-                                print(
-                                    'Checkout pressed with items: ${cartProvider.cartItems}');
-                              },
+                              onPressed: onCheckoutPressed,
                               style: ElevatedButton.styleFrom(
                                 padding: EdgeInsets.symmetric(
                                     vertical: 15, horizontal: 30),
