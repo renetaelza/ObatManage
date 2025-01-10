@@ -28,8 +28,7 @@ class _ManageObatState extends State<ManageObat> {
         return {
           'id': doc.id,
           'nama': data['nama'],
-          'harga': int.tryParse(data['harga'].toString()) ??
-              0, // Ensure harga is an int
+          'harga': int.tryParse(data['harga'].toString()) ?? 0,
           'stok': data['stok'],
         };
       }).toList();
@@ -44,6 +43,16 @@ class _ManageObatState extends State<ManageObat> {
 
   void deleteObat(String id) {
     FirebaseFirestore.instance.collection('obat').doc(id).delete();
+  }
+
+  void addObat(String nama, int harga, int stok) {
+    FirebaseFirestore.instance.collection('obat').add({
+      'nama': nama,
+      'harga': harga,
+      'stok': stok,
+    }).then((value) {
+      fetchObat();  // Refresh the list after adding
+    });
   }
 
   @override
@@ -63,7 +72,7 @@ class _ManageObatState extends State<ManageObat> {
         actions: [
           IconButton(
             icon: Icon(Icons.add, color: Colors.white),
-            onPressed: () {},
+            onPressed: () => _showAddObatDialog(context),
           ),
         ],
       ),
@@ -112,5 +121,66 @@ class _ManageObatState extends State<ManageObat> {
   String formatHarga(int harga) {
     final format = NumberFormat.currency(locale: 'id_ID', symbol: 'Rp');
     return format.format(harga);
+  }
+
+  // Show dialog to add new obat
+  void _showAddObatDialog(BuildContext context) {
+    final _namaController = TextEditingController();
+    final _hargaController = TextEditingController();
+    final _stokController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Add Obat'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _namaController,
+                decoration: InputDecoration(labelText: 'Nama Obat'),
+              ),
+              TextField(
+                controller: _hargaController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(labelText: 'Harga Obat'),
+              ),
+              TextField(
+                controller: _stokController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(labelText: 'Stok Obat'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                String nama = _namaController.text;
+                int harga = int.tryParse(_hargaController.text) ?? 0;
+                int stok = int.tryParse(_stokController.text) ?? 0;
+                
+                if (nama.isNotEmpty && harga > 0 && stok > 0) {
+                  addObat(nama, harga, stok);
+                  Navigator.pop(context);
+                } else {
+                  // Show error if fields are invalid
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Please fill all fields correctly')),
+                  );
+                }
+              },
+              child: Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
