@@ -1,3 +1,4 @@
+import 'package:obat/pages/manage_transaksi.dart';
 import 'package:obat/pages/profile_page.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +23,8 @@ class _HomePageState extends State<HomePage>
 
   List<Map<String, dynamic>> obatList = [];
   List<Map<String, dynamic>> filteredList = [];
+  String selectedCategory = 'All';
+  List<String> categories = ['All'];
   String keywordCari = '';
   User? currentUser;
   String userName = 'Nama tidak tersedia';
@@ -49,37 +52,52 @@ class _HomePageState extends State<HomePage>
     FirebaseFirestore firestore = FirebaseFirestore.instance;
     CollectionReference obat = firestore.collection('obat');
 
-    obat.snapshots().listen((snapshot) {
-      List<Map<String, dynamic>> tempList = snapshot.docs.map((doc) {
-        return {
-          'id': doc.id,
-          ...doc.data() as Map<String, dynamic>,
-        };
-      }).toList();
+    final snapshot = await obat.get();
+    List<Map<String, dynamic>> tempList = snapshot.docs.map((doc) {
+      return {
+        'id': doc.id,
+        ...doc.data() as Map<String, dynamic>,
+      };
+    }).toList();
 
-      setState(() {
-        obatList = tempList;
-        filteredList = tempList;
-        isLoading = false;
-      });
+    Set<String> categorySet = {'All'};
+    for (var item in tempList) {
+      if (item['kategori'] != null) {
+        categorySet.add(item['kategori']);
+      }
+    }
+    categories = categorySet.toList();
+
+    setState(() {
+      obatList = tempList;
+      filteredList = tempList;
+      isLoading = false;
     });
   }
 
-  void searchobat(String query) {
+  void searchObat(String query) {
     setState(() {
       keywordCari = query;
-      if (query.isEmpty) {
-        filteredList = obatList;
-      } else {
-        filteredList = obatList.where((obat) {
-          final namaMatch = (obat['nama'] ?? ' ')
-              .toString()
-              .toLowerCase()
-              .contains(query.toLowerCase());
-          final hargaMatch = (obat['harga'] ?? '').toString().contains(query);
-          return namaMatch || hargaMatch;
-        }).toList();
-      }
+      filterObat();
+    });
+  }
+
+  void filterObat() {
+    setState(() {
+      filteredList = obatList.where((obat) {
+        final namaMatch = (obat['nama'] ?? ' ')
+            .toString()
+            .toLowerCase()
+            .contains(keywordCari.toLowerCase());
+
+        final hargaMatch =
+            (obat['harga'] ?? '').toString().contains(keywordCari);
+
+        final categoryMatch = selectedCategory == 'All' ||
+            (obat['kategori'] ?? '').toString() == selectedCategory;
+
+        return (namaMatch || hargaMatch) && categoryMatch;
+      }).toList();
     });
   }
 
@@ -145,6 +163,44 @@ class _HomePageState extends State<HomePage>
     }
   }
 
+  void _showCategoryFilter() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Pilih Kategori'),
+          content: Container(
+            width: double.maxFinite,
+            child: ListView(
+              children: categories.map((String category) {
+                return RadioListTile<String>(
+                  title: Text(category),
+                  value: category,
+                  groupValue: selectedCategory,
+                  onChanged: (String? value) {
+                    setState(() {
+                      selectedCategory = value!;
+                      filterObat();
+                    });
+                    Navigator.of(context).pop(); // Close the dialog
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: Text("Tutup"),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -194,6 +250,16 @@ class _HomePageState extends State<HomePage>
                 );
               },
             ),
+            ListTile(
+              leading: Icon(Icons.attach_money),
+              title: Text("Manage Transaksi"),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => ManageTransaksi()),
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -203,6 +269,10 @@ class _HomePageState extends State<HomePage>
         centerTitle: true,
         title: Text('Cashier', style: TextStyle(color: Colors.white)),
         actions: [
+          IconButton(
+            icon: Icon(Icons.filter_list),
+            onPressed: _showCategoryFilter,
+          ),
           Consumer<CartProvider>(
             builder: (context, cartProvider, child) {
               return Stack(
@@ -244,177 +314,154 @@ class _HomePageState extends State<HomePage>
           ),
         ],
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(50),
+          preferredSize: Size.fromHeight(80),
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 10.0),
-            child: TextField(
-              onChanged: (value) {
-                searchobat(value);
-              },
-              decoration: InputDecoration(
-                hintText: 'Cari Obat/Harga',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10.0),
-                  borderSide: BorderSide(color: Colors.white),
+            child: Column(
+              children: [
+                TextField(
+                  onChanged: (value) {
+                    searchObat(value);
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Cari Obat/Harga',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10.0),
+                      borderSide: BorderSide(color: Colors.white),
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
                 ),
-                filled: true,
-                fillColor: Colors.white,
-                suffixIcon: Icon(Icons.search),
-              ),
+              ],
             ),
           ),
         ),
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('obat').snapshots(),
-        builder: (context, snapshot) {
-          if (isLoading && filteredList.isEmpty) {
-            return _buildSkeletonLoading(20);
-          }
-
-          if (snapshot.hasData) {
-            obatList = snapshot.data!.docs.map((doc) {
-              return {
-                'id': doc.id,
-                ...doc.data() as Map<String, dynamic>,
-              };
-            }).toList();
-
-            filteredList = keywordCari.isEmpty
-                ? obatList
-                : obatList.where((obat) {
-                    final namaMatch = (obat['nama'] ?? ' ')
-                        .toString()
-                        .toLowerCase()
-                        .contains(keywordCari.toLowerCase());
-                    final hargaMatch =
-                        (obat['harga'] ?? '').toString().contains(keywordCari);
-                    return namaMatch || hargaMatch;
-                  }).toList();
-
-            if (filteredList.isEmpty) {
-              return Center(child: Text('Tidak ada hasil pencarian.'));
-            }
-
-            return Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: GridView.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 8.0,
-                  mainAxisSpacing: 8.0,
-                  childAspectRatio: 0.7,
-                ),
-                itemCount: filteredList.length,
-                itemBuilder: (context, index) {
-                  final obat = filteredList[index];
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ObatDetailPage(
-                            obatId: obat['id'],
+      body: isLoading
+          ? _buildSkeletonLoading(20) // Show skeleton while loading
+          : filteredList.isEmpty
+              ? Center(child: Text('Tidak ada hasil pencarian.'))
+              : Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: GridView.builder(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 8.0,
+                      mainAxisSpacing: 8.0,
+                      childAspectRatio: 0.7,
+                    ),
+                    itemCount: filteredList.length,
+                    itemBuilder: (context, index) {
+                      final obat = filteredList[index];
+                      return GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ObatDetailPage(
+                                obatId: obat['id'],
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10.0),
+                                  child: obat['pict'] != null &&
+                                          obat['pict'].isNotEmpty
+                                      ? Image.asset(
+                                          obat['pict'],
+                                          fit: BoxFit.cover,
+                                          width: double.infinity,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                            return Container(
+                                              color: Colors.grey[300],
+                                              height: double.infinity,
+                                              width: double.infinity,
+                                              child: Icon(
+                                                Icons.medication,
+                                                color: Colors.grey,
+                                                size: 50,
+                                              ),
+                                            );
+                                          },
+                                        )
+                                      : Container(
+                                          color: Colors.grey[300],
+                                          height: double.infinity,
+                                          width: double.infinity,
+                                          child: Icon(
+                                            Icons.medication,
+                                            color: Colors.grey,
+                                            size: 50,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      obat['nama'] != null
+                                          ? (obat['nama'].length > 15
+                                              ? '${obat['nama'].substring(0, 15)}...'
+                                              : obat['nama'])
+                                          : 'Nama tidak tersedia',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      'Harga: ${formatHarga(obat['harga'].toString())}',
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                    Text(
+                                      'Stok: ${obat['stok']}',
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                    SizedBox(height: 8),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        addToCart(obat);
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Color(0xFFC8ACD6),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'Add to Cart',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       );
                     },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(10.0),
-                              child: obat['pict'] != null &&
-                                      obat['pict'].isNotEmpty
-                                  ? Image.asset(
-                                      obat['pict'],
-                                      fit: BoxFit.cover,
-                                      width: double.infinity,
-                                      errorBuilder:
-                                          (context, error, stackTrace) {
-                                        return Container(
-                                          color: Colors.grey[300],
-                                          child: Icon(
-                                            Icons.medication,
-                                            color: Colors.grey,
-                                          ),
-                                        );
-                                      },
-                                    )
-                                  : Container(
-                                      color: Colors.grey[300],
-                                      child: Icon(
-                                        Icons.medication,
-                                        color: Colors.grey,
-                                        size: 50,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Text(
-                                  obat['nama'] != null
-                                      ? (obat['nama'].length > 15
-                                          ? '${obat['nama'].substring(0, 15)}...'
-                                          : obat['nama'])
-                                      : 'Nama tidak tersedia',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  'Harga: ${formatHarga(obat['harga'].toString())}',
-                                  style: TextStyle(fontSize: 14),
-                                ),
-                                Text(
-                                  'Stok: ${obat['stok']}',
-                                  style: TextStyle(fontSize: 14),
-                                ),
-                                SizedBox(height: 8),
-                                ElevatedButton(
-                                  onPressed: () {
-                                    addToCart(obat);
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Color(0xFFC8ACD6),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    'Add to Cart',
-                                    style: TextStyle(color: Colors.white),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          }
-
-          return Center(child: Text('Data tidak tersedia.'));
-        },
-      ),
+                  ),
+                ),
     );
   }
 }

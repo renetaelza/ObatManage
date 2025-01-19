@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:obat/pages/manage_transaksi.dart';
 import 'firebase_options.dart';
 import 'pages/login_page.dart';
 import 'pages/home_page.dart';
@@ -32,6 +33,7 @@ class MyApp extends StatelessWidget {
           'home_page': (context) => HomePage(),
           'profile_page': (context) => ProfilePage(),
           'manage_obat': (context) => ManageObat(),
+          'manage_transaksi': (context) => ManageTransaksi(),
         },
       ),
     );

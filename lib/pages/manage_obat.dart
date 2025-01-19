@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:csv/csv.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 class ManageObat extends StatefulWidget {
   @override
@@ -9,7 +14,6 @@ class ManageObat extends StatefulWidget {
 
 class _ManageObatState extends State<ManageObat> {
   List<Map<String, dynamic>> obatList = [];
-  List<Map<String, dynamic>> filteredList = [];
   bool isLoading = true;
 
   @override
@@ -35,10 +39,87 @@ class _ManageObatState extends State<ManageObat> {
 
       setState(() {
         obatList = tempList;
-        filteredList = tempList;
         isLoading = false;
       });
     });
+  }
+
+  Future<void> importData(BuildContext context) async {
+    try {
+      final result = await FilePicker.platform
+          .pickFiles(type: FileType.custom, allowedExtensions: ['csv']);
+      if (result != null) {
+        final fileBytes = result.files.single.bytes;
+        if (fileBytes != null) {
+          final csvData = CsvToListConverter()
+              .convert(String.fromCharCodes(fileBytes), eol: '\n');
+
+          // Save data to Firestore
+          for (var row in csvData.skip(1)) {
+            if (row.length >= 6) {
+              // Ensure there are enough columns
+              await FirebaseFirestore.instance.collection('obat').add({
+                'desc': row[0].toString(),
+                'harga': int.tryParse(row[1].toString()) ?? 0,
+                'kategori': row[2].toString(),
+                'nama': row[3].toString(),
+                'pict': row[4].toString(),
+                'stok': int.tryParse(row[5].toString()) ?? 0,
+              });
+            }
+          }
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('CSV file successfully imported!')),
+          );
+        }
+      }
+    } catch (e) {
+      print("Error importing data: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to import CSV file.')),
+      );
+    }
+  }
+
+  Future<void> exportDataToPDF() async {
+    try {
+      final pdf = pw.Document();
+      final data = await FirebaseFirestore.instance.collection('obat').get();
+
+      pdf.addPage(
+        pw.Page(
+          build: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('Obat Report', style: pw.TextStyle(fontSize: 24)),
+                pw.SizedBox(height: 16),
+                pw.Table.fromTextArray(
+                  headers: ['ID', 'Nama', 'Harga', 'Stok'],
+                  data: data.docs.map((doc) {
+                    final d = doc.data();
+                    return [
+                      doc.id,
+                      d['nama'] ?? '',
+                      d['harga']?.toString() ?? '0',
+                      d['stok']?.toString() ?? '0',
+                    ];
+                  }).toList(),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+
+      await Printing.sharePdf(
+        bytes: await pdf.save(),
+        filename: 'obat-report.pdf',
+      );
+    } catch (e) {
+      print("Error exporting PDF: $e");
+    }
   }
 
   void deleteObat(String id) {
@@ -47,34 +128,6 @@ class _ManageObatState extends State<ManageObat> {
         .doc(id)
         .delete()
         .then((value) {
-      fetchObat();
-    });
-  }
-
-  void addObat(String nama, int harga, int stok, String desc, String kategori,
-      String pict) {
-    FirebaseFirestore.instance.collection('obat').add({
-      'nama': nama,
-      'harga': harga,
-      'stok': stok,
-      'desc': desc,
-      'kategori': kategori,
-      'pict': pict,
-    }).then((value) {
-      fetchObat();
-    });
-  }
-
-  void updateObat(String id, String nama, int harga, int stok, String desc,
-      String kategori, String pict) {
-    FirebaseFirestore.instance.collection('obat').doc(id).update({
-      'nama': nama,
-      'harga': harga,
-      'stok': stok,
-      'desc': desc,
-      'kategori': kategori,
-      'pict': pict,
-    }).then((value) {
       fetchObat();
     });
   }
@@ -111,6 +164,8 @@ class _ManageObatState extends State<ManageObat> {
     return Scaffold(
       backgroundColor: Theme.of(context).primaryColor,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Text('Manage Obat', style: TextStyle(color: Colors.white)),
         centerTitle: true,
         leading: IconButton(
@@ -119,7 +174,6 @@ class _ManageObatState extends State<ManageObat> {
             Navigator.pop(context);
           },
         ),
-        backgroundColor: Theme.of(context).primaryColor,
         actions: [
           IconButton(
             icon: Icon(Icons.add, color: Colors.white),
@@ -127,47 +181,69 @@ class _ManageObatState extends State<ManageObat> {
           ),
         ],
       ),
-      body: isLoading
-          ? Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              itemCount: filteredList.length,
-              itemBuilder: (context, index) {
-                final item = filteredList[index];
-                return Card(
-                  margin: EdgeInsets.all(8.0),
-                  child: ListTile(
-                    title: Text(item['nama'] ?? 'Nama tidak tersedia',
-                        style: TextStyle(color: Colors.black)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Harga: ${formatHarga(item['harga'])}',
-                            style: TextStyle(color: Colors.black)),
-                        Text('Stok: ${item['stok']}',
-                            style: TextStyle(color: Colors.black)),
-                      ],
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () {
-                            _showUpdateObatDialog(context, item);
-                          },
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            _showDeleteConfirmationDialog(context, item['id']);
-                          },
-                        ),
-                      ],
-                    ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => importData(context),
+                  icon: const Icon(Icons.upload_file),
+                  label: const Text('Import CSV',
+                      style: TextStyle(color: Colors.black)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.teal,
                   ),
-                );
-              },
+                ),
+                ElevatedButton.icon(
+                  onPressed: exportDataToPDF,
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('Export PDF',
+                      style: TextStyle(color: Colors.black)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                  ),
+                ),
+              ],
             ),
+          ),
+          isLoading
+              ? Center(child: CircularProgressIndicator())
+              : Expanded(
+                  child: ListView.builder(
+                    itemCount: obatList.length,
+                    itemBuilder: (context, index) {
+                      final item = obatList[index];
+                      return Card(
+                        margin: EdgeInsets.all(8.0),
+                        child: ListTile(
+                          title: Text(item['nama'] ?? 'Nama tidak tersedia',
+                              style: TextStyle(color: Colors.black)),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Harga: ${formatHarga(item['harga'])}',
+                                  style: TextStyle(color: Colors.black)),
+                              Text('Stok: ${item['stok']}',
+                                  style: TextStyle(color: Colors.black)),
+                            ],
+                          ),
+                          trailing: IconButton(
+                            icon: Icon(Icons.delete, color: Colors.red),
+                            onPressed: () {
+                              _showDeleteConfirmationDialog(
+                                  context, item['id']);
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+        ],
+      ),
     );
   }
 
@@ -182,288 +258,82 @@ class _ManageObatState extends State<ManageObat> {
     final _stokController = TextEditingController();
     final _deskripsiController = TextEditingController();
     final _fotoController = TextEditingController();
-    String? _selectedKategori; // Variable to store selected category
-
-    // Variables to track validation states
-    bool _isNamaValid = true;
-    bool _isHargaValid = true;
-    bool _isStokValid = true;
-    bool _isDeskripsiValid = true;
-    bool _isFotoValid = true;
-    bool _isKategoriValid = true;
+    String? _selectedKategori;
 
     showDialog(
       context: context,
       builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text('Add Obat'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: _namaController,
-                      decoration: InputDecoration(
-                        labelText: 'Nama Obat',
-                        errorText: !_isNamaValid ? 'Required' : null,
-                      ),
-                    ),
-                    TextField(
-                      controller: _hargaController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Harga Obat',
-                        errorText:
-                            !_isHargaValid ? 'Must be a positive number' : null,
-                      ),
-                    ),
-                    TextField(
-                      controller: _deskripsiController,
-                      decoration: InputDecoration(
-                        labelText: 'Deskripsi Obat',
-                        errorText: !_isDeskripsiValid ? 'Required' : null,
-                      ),
-                    ),
-                    TextField(
-                      controller: _stokController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Stok Obat',
-                        errorText:
-                            !_isStokValid ? 'Must be a positive number' : null,
-                      ),
-                    ),
-                    TextField(
-                      controller: _fotoController,
-                      decoration: InputDecoration(
-                        labelText: 'Foto Obat',
-                        hintText: 'fotoObat/...',
-                        errorText: !_isFotoValid ? 'Required' : null,
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: _selectedKategori,
-                      items: ['body', 'obat'].map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      onChanged: (newValue) {
-                        setState(() {
-                          _selectedKategori = newValue;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'Kategori Obat',
-                        errorText: !_isKategoriValid ? 'Required' : null,
-                      ),
-                    ),
-                  ],
+        return AlertDialog(
+          title: Text('Add Obat'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _namaController,
+                  decoration: InputDecoration(labelText: 'Nama Obat'),
                 ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  child: Text('Cancel'),
+                TextField(
+                  controller: _hargaController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(labelText: 'Harga Obat'),
                 ),
-                TextButton(
-                  onPressed: () {
-                    // Validate fields
+                TextField(
+                  controller: _stokController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(labelText: 'Stok Obat'),
+                ),
+                TextField(
+                  controller: _deskripsiController,
+                  decoration: InputDecoration(labelText: 'Deskripsi Obat'),
+                ),
+                TextField(
+                  controller: _fotoController,
+                  decoration: InputDecoration(labelText: 'Foto Obat'),
+                ),
+                DropdownButtonFormField<String>(
+                  value: _selectedKategori,
+                  items: ['body', 'obat'].map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (newValue) {
                     setState(() {
-                      _isNamaValid = _namaController.text.isNotEmpty;
-                      _isHargaValid =
-                          int.tryParse(_hargaController.text) != null &&
-                              int.parse(_hargaController.text) > 0;
-                      _isStokValid =
-                          int.tryParse(_stokController.text) != null &&
-                              int.parse(_stokController.text) > 0;
-                      _isDeskripsiValid = _deskripsiController.text.isNotEmpty;
-                      _isFotoValid = _fotoController.text.isNotEmpty;
-                      _isKategoriValid = _selectedKategori != null;
+                      _selectedKategori = newValue;
                     });
-
-                    if (_isNamaValid &&
-                        _isHargaValid &&
-                        _isStokValid &&
-                        _isDeskripsiValid &&
-                        _isFotoValid &&
-                        _isKategoriValid) {
-                      addObat(
-                        _namaController.text,
-                        int.parse(_hargaController.text),
-                        int.parse(_stokController.text),
-                        _deskripsiController.text,
-                        _selectedKategori!,
-                        _fotoController.text,
-                      );
-                      Navigator.pop(context);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Please fill all fields correctly'),
-                        ),
-                      );
-                    }
                   },
-                  child: Text('Add'),
+                  decoration: InputDecoration(labelText: 'Kategori Obat'),
                 ),
               ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _showUpdateObatDialog(BuildContext context, Map<String, dynamic> item) {
-    final _namaController = TextEditingController(text: item['nama']);
-    final _hargaController =
-        TextEditingController(text: item['harga'].toString());
-    final _stokController =
-        TextEditingController(text: item['stok'].toString());
-    final _deskripsiController =
-        TextEditingController(text: item['deskripsi'] ?? '');
-    final _fotoController = TextEditingController(text: item['foto'] ?? '');
-    String? _selectedKategori = item['kategori'];
-
-    // Variables for validation
-    bool _isNamaValid = true;
-    bool _isHargaValid = true;
-    bool _isStokValid = true;
-    bool _isDeskripsiValid = true;
-    bool _isFotoValid = true;
-    bool _isKategoriValid = true;
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text('Update Obat'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: _namaController,
-                      decoration: InputDecoration(
-                        labelText: 'Nama Obat',
-                        errorText: !_isNamaValid ? 'Required' : null,
-                      ),
-                    ),
-                    TextField(
-                      controller: _hargaController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Harga Obat',
-                        errorText:
-                            !_isHargaValid ? 'Must be a positive number' : null,
-                      ),
-                    ),
-                    TextField(
-                      controller: _stokController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        labelText: 'Stok Obat',
-                        errorText:
-                            !_isStokValid ? 'Must be a positive number' : null,
-                      ),
-                    ),
-                    TextField(
-                      controller: _deskripsiController,
-                      decoration: InputDecoration(
-                        labelText: 'Deskripsi Obat',
-                        errorText: !_isDeskripsiValid ? 'Required' : null,
-                      ),
-                    ),
-                    TextField(
-                      controller: _fotoController,
-                      decoration: InputDecoration(
-                        labelText: 'Foto Obat',
-                        hintText: 'fotoObat/...',
-                        errorText: !_isFotoValid ? 'Required' : null,
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    DropdownButtonFormField<String>(
-                      value: _selectedKategori,
-                      items: ['body', 'obat'].map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value),
-                        );
-                      }).toList(),
-                      onChanged: (newValue) {
-                        setState(() {
-                          _selectedKategori = newValue;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        labelText: 'Kategori Obat',
-                        errorText: !_isKategoriValid ? 'Required' : null,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  child: Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _isNamaValid = _namaController.text.isNotEmpty;
-                      _isHargaValid =
-                          int.tryParse(_hargaController.text) != null &&
-                              int.parse(_hargaController.text) > 0;
-                      _isStokValid =
-                          int.tryParse(_stokController.text) != null &&
-                              int.parse(_stokController.text) > 0;
-                      _isDeskripsiValid = _deskripsiController.text.isNotEmpty;
-                      _isFotoValid = _fotoController.text.isNotEmpty;
-                      _isKategoriValid = _selectedKategori != null;
-                    });
-
-                    if (_isNamaValid &&
-                        _isHargaValid &&
-                        _isStokValid &&
-                        _isDeskripsiValid &&
-                        _isFotoValid &&
-                        _isKategoriValid) {
-                      updateObat(
-                        item['id'],
-                        _namaController.text,
-                        int.parse(_hargaController.text),
-                        int.parse(_stokController.text),
-                        _deskripsiController.text,
-                        _selectedKategori!,
-                        _fotoController.text,
-                      );
-                      Navigator.pop(context);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Please fill all fields correctly'),
-                        ),
-                      );
-                    }
-                  },
-                  child: Text('Update'),
-                ),
-              ],
-            );
-          },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                // Add logic to add Obat
+                FirebaseFirestore.instance.collection('obat').add({
+                  'nama': _namaController.text,
+                  'harga': int.tryParse(_hargaController.text) ?? 0,
+                  'stok': int.tryParse(_stokController.text) ?? 0,
+                  'desc': _deskripsiController.text,
+                  'kategori': _selectedKategori,
+                  'pict': _fotoController.text,
+                }).then((value) {
+                  fetchObat();
+                  Navigator.pop(context);
+                });
+              },
+              child: Text('Add'),
+            ),
+          ],
         );
       },
     );
