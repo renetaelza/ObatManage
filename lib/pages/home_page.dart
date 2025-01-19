@@ -125,8 +125,74 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  void addToCart(Map<String, dynamic> obat) {
-    Provider.of<CartProvider>(context, listen: false).addToCart(obat);
+  void addToCart(Map<String, dynamic> obat) async {
+    // Check if there's enough stock
+    if (obat['stok'] <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Stok habis!'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Get reference to Firestore
+    FirebaseFirestore firestore = FirebaseFirestore.instance;
+    DocumentReference obatRef = firestore.collection('obat').doc(obat['id']);
+
+    try {
+      // Update stock in Firestore using transaction
+      await firestore.runTransaction((transaction) async {
+        DocumentSnapshot snapshot = await transaction.get(obatRef);
+        
+        if (!snapshot.exists) {
+          throw Exception('Obat tidak ditemukan!');
+        }
+
+        Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
+        int currentStock = data['stok'] ?? 0;
+
+        if (currentStock <= 0) {
+          throw Exception('Stok habis!');
+        }
+
+        // Decrease stock by 1
+        transaction.update(obatRef, {'stok': currentStock - 1});
+
+        // Update local state
+        setState(() {
+          obat['stok'] = currentStock - 1;
+          // Update the stock in both lists
+          int mainIndex = obatList.indexWhere((item) => item['id'] == obat['id']);
+          int filteredIndex = filteredList.indexWhere((item) => item['id'] == obat['id']);
+          
+          if (mainIndex != -1) {
+            obatList[mainIndex]['stok'] = currentStock - 1;
+          }
+          if (filteredIndex != -1) {
+            filteredList[filteredIndex]['stok'] = currentStock - 1;
+          }
+        });
+      });
+
+      // Add to cart after successful stock update
+      Provider.of<CartProvider>(context, listen: false).addToCart(obat);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Berhasil ditambahkan ke keranjang'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   String formatHarga(String harga) {
