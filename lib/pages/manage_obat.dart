@@ -34,6 +34,9 @@ class _ManageObatState extends State<ManageObat> {
           'nama': data['nama'],
           'harga': int.tryParse(data['harga'].toString()) ?? 0,
           'stok': data['stok'],
+          'desc': data['desc'],
+          'kategori': data['kategori'],
+          'pict': data['pict'],
         };
       }).toList();
 
@@ -54,10 +57,8 @@ class _ManageObatState extends State<ManageObat> {
           final csvData = CsvToListConverter()
               .convert(String.fromCharCodes(fileBytes), eol: '\n');
 
-          // Save data to Firestore
           for (var row in csvData.skip(1)) {
             if (row.length >= 6) {
-              // Ensure there are enough columns
               await FirebaseFirestore.instance.collection('obat').add({
                 'desc': row[0].toString(),
                 'harga': int.tryParse(row[1].toString()) ?? 0,
@@ -159,6 +160,95 @@ class _ManageObatState extends State<ManageObat> {
     );
   }
 
+  void _showEditObatDialog(BuildContext context, Map<String, dynamic> obat) {
+    final _namaController = TextEditingController(text: obat['nama']);
+    final _hargaController = TextEditingController(text: obat['harga'].toString());
+    final _stokController = TextEditingController(text: obat['stok'].toString());
+    final _deskripsiController = TextEditingController(text: obat['desc']);
+    final _fotoController = TextEditingController(text: obat['pict']);
+    String? _selectedKategori = obat['kategori'];
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Edit Obat'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _namaController,
+                  decoration: InputDecoration(labelText: 'Nama Obat'),
+                ),
+                TextField(
+                  controller: _hargaController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(labelText: 'Harga Obat'),
+                ),
+                TextField(
+                  controller: _stokController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(labelText: 'Stok Obat'),
+                ),
+                TextField(
+                  controller: _deskripsiController,
+                  decoration: InputDecoration(labelText: 'Deskripsi Obat'),
+                ),
+                TextField(
+                  controller: _fotoController,
+                  decoration: InputDecoration(labelText: 'Foto Obat'),
+                ),
+                DropdownButtonFormField<String>(
+                  value: _selectedKategori,
+                  items: ['body', 'obat'].map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (newValue) {
+                    setState(() {
+                      _selectedKategori = newValue;
+                    });
+                  },
+                  decoration: InputDecoration(labelText: 'Kategori Obat'),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                FirebaseFirestore.instance
+                    .collection('obat')
+                    .doc(obat['id'])
+                    .update({
+                  'nama': _namaController.text,
+                  'harga': int.tryParse(_hargaController.text) ?? 0,
+                  'stok': int.tryParse(_stokController.text) ?? 0,
+                  'desc': _deskripsiController.text,
+                  'kategori': _selectedKategori,
+                  'pict': _fotoController.text,
+                }).then((value) {
+                  fetchObat();
+                  Navigator.pop(context);
+                });
+              },
+              child: Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -230,12 +320,23 @@ class _ManageObatState extends State<ManageObat> {
                                   style: TextStyle(color: Colors.black)),
                             ],
                           ),
-                          trailing: IconButton(
-                            icon: Icon(Icons.delete, color: Colors.red),
-                            onPressed: () {
-                              _showDeleteConfirmationDialog(
-                                  context, item['id']);
-                            },
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: Icon(Icons.edit, color: Colors.blue),
+                                onPressed: () {
+                                  _showEditObatDialog(context, item);
+                                },
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.delete, color: Colors.red),
+                                onPressed: () {
+                                  _showDeleteConfirmationDialog(
+                                      context, item['id']);
+                                },
+                              ),
+                            ],
                           ),
                         ),
                       );
@@ -318,7 +419,6 @@ class _ManageObatState extends State<ManageObat> {
             ),
             TextButton(
               onPressed: () {
-                // Add logic to add Obat
                 FirebaseFirestore.instance.collection('obat').add({
                   'nama': _namaController.text,
                   'harga': int.tryParse(_hargaController.text) ?? 0,

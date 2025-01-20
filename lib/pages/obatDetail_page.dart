@@ -196,21 +196,6 @@ class _ObatDetailPageState extends State<ObatDetailPage> {
               ],
             ),
             const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                addToCart(obatDetail!);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFFC8ACD6),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: const Text(
-                'Add to Cart',
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
           ],
         ),
       ),
